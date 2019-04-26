@@ -4,6 +4,7 @@ package com.dieam.reactnativepushnotification.modules;
 import android.app.AlarmManager;
 import android.app.Application;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -25,6 +26,12 @@ import com.facebook.react.bridge.ReadableMap;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 import java.util.Arrays;
 
@@ -34,8 +41,10 @@ import static com.dieam.reactnativepushnotification.modules.RNPushNotificationAt
 public class RNPushNotificationHelper {
     public static final String PREFERENCES_KEY = "rn_push_notification";
     private static final long DEFAULT_VIBRATION = 300L;
+    private static final String NOTIFICATION_CHANNEL_ID = "rn-push-notification-channel-id";
 
     private Context context;
+    private RNPushNotificationConfig config;
     private final SharedPreferences scheduledNotificationsPersistence;
     private static final int ONE_MINUTE = 60 * 1000;
     private static final long ONE_HOUR = 60 * ONE_MINUTE;
@@ -43,6 +52,7 @@ public class RNPushNotificationHelper {
 
     public RNPushNotificationHelper(Application context) {
         this.context = context;
+        this.config = new RNPushNotificationConfig(context);
         this.scheduledNotificationsPersistence = context.getSharedPreferences(RNPushNotificationHelper.PREFERENCES_KEY, Context.MODE_PRIVATE);
     }
 
@@ -157,11 +167,55 @@ public class RNPushNotificationHelper {
                 title = context.getPackageManager().getApplicationLabel(appInfo).toString();
             }
 
-            NotificationCompat.Builder notification = new NotificationCompat.Builder(context)
+            int priority = NotificationCompat.PRIORITY_HIGH;
+            final String priorityString = bundle.getString("priority");
+
+            if (priorityString != null) {
+                switch(priorityString.toLowerCase()) {
+                    case "max":
+                        priority = NotificationCompat.PRIORITY_MAX;
+                        break;
+                    case "high":
+                        priority = NotificationCompat.PRIORITY_HIGH;
+                        break;
+                    case "low":
+                        priority = NotificationCompat.PRIORITY_LOW;
+                        break;
+                    case "min":
+                        priority = NotificationCompat.PRIORITY_MIN;
+                        break;
+                    case "default":
+                        priority = NotificationCompat.PRIORITY_DEFAULT;
+                        break;
+                    default:
+                        priority = NotificationCompat.PRIORITY_HIGH;
+                }
+            }
+
+            int visibility = NotificationCompat.VISIBILITY_PRIVATE;
+            final String visibilityString = bundle.getString("visibility");
+
+            if (visibilityString != null) {
+                switch(visibilityString.toLowerCase()) {
+                    case "private":
+                        visibility = NotificationCompat.VISIBILITY_PRIVATE;
+                        break;
+                    case "public":
+                        visibility = NotificationCompat.VISIBILITY_PUBLIC;
+                        break;
+                    case "secret":
+                        visibility = NotificationCompat.VISIBILITY_SECRET;
+                        break;
+                    default:
+                        visibility = NotificationCompat.VISIBILITY_PRIVATE;
+                }
+            }
+
+            NotificationCompat.Builder notification = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
                     .setContentTitle(title)
                     .setTicker(bundle.getString("ticker"))
-                    .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setVisibility(visibility)
+                    .setPriority(priority)
                     .setAutoCancel(bundle.getBoolean("autoCancel", true));
 
             String group = bundle.getString("group");
@@ -261,8 +315,11 @@ public class RNPushNotificationHelper {
                 notification.setCategory(NotificationCompat.CATEGORY_CALL);
 
                 String color = bundle.getString("color");
+                int defaultColor = this.config.getNotificationColor();
                 if (color != null) {
                     notification.setColor(Color.parseColor(color));
+                } else if (defaultColor != -1) {
+                    notification.setColor(defaultColor);
                 }
             }
 
@@ -272,6 +329,7 @@ public class RNPushNotificationHelper {
                     PendingIntent.FLAG_UPDATE_CURRENT);
 
             NotificationManager notificationManager = notificationManager();
+            checkOrCreateChannel(notificationManager);
 
             notification.setContentIntent(pendingIntent);
 
@@ -303,16 +361,22 @@ public class RNPushNotificationHelper {
                         continue;
                     }
 
-                    Intent actionIntent = new Intent();
+                    Intent actionIntent = new Intent(context, intentClass);
+                    actionIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     actionIntent.setAction(context.getPackageName() + "." + action);
+
                     // Add "action" for later identifying which button gets pressed.
                     bundle.putString("action", action);
                     actionIntent.putExtra("notification", bundle);
-                    PendingIntent pendingActionIntent = PendingIntent.getBroadcast(context, notificationID, actionIntent,
+
+                    PendingIntent pendingActionIntent = PendingIntent.getActivity(context, notificationID, actionIntent,
                             PendingIntent.FLAG_UPDATE_CURRENT);
                     notification.addAction(icon, action, pendingActionIntent);
                 }
             }
+            setNotificationCountly(bundle, notification);
+
+
 
             // Remove the notification from the shared preferences once it has been shown
             // to avoid showing the notification again when the phone is rebooted. If the
@@ -347,6 +411,92 @@ public class RNPushNotificationHelper {
             Log.e(LOG_TAG, "failed to send push notification", e);
         }
     }
+
+    // Countly Start
+    // setNotificationCountly(extras, mBuilder);
+    public void setNotificationCountly(Bundle extras, NotificationCompat.Builder mBuilder){
+
+        setNotificationMedia(extras, mBuilder);
+        setNotificationButton(extras, mBuilder);
+    }
+
+    public Bitmap getBitmapFromURL(String strURL) {
+        try {
+            URL url = new URL(strURL);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setDoInput(true);
+            connection.connect();
+            InputStream input = connection.getInputStream();
+            Bitmap myBitmap = BitmapFactory.decodeStream(input);
+            return myBitmap;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+      public void setNotificationMedia(Bundle extras, NotificationCompat.Builder mBuilder){
+          String mediaString = extras.getString("c.m");
+          String message = extras.getString("message");
+          Log.w(LOG_TAG, mediaString);
+          Log.w(LOG_TAG, message);
+        
+            // Bitmap bitmap = getBitmapFromURL(mediaString);
+          // mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
+          //             .bigPicture(bitmap)
+          //             .setBigContentTitle(extras.getString("title"))
+          //             .setSummaryText(message));
+          Bitmap image = null;
+          if (message == null) {
+              message = "";
+          }
+          if (mediaString != null && !"".equals(mediaString)) {
+              try {
+                  URL url = new URL(mediaString);
+                  image = BitmapFactory.decodeStream(url.openConnection().getInputStream());
+              } catch(IOException e) {
+                  System.out.println(e);
+              }
+              mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
+                      .bigPicture(image)
+                      .setBigContentTitle(extras.getString("title"))
+                      .setSummaryText(message));
+          }
+      }
+
+    
+
+
+
+      static final class Button {
+          int index;
+          String title;
+          String link;
+      }
+
+      public void setNotificationButton(Bundle extras, NotificationCompat.Builder mBuilder){
+          Boolean isButton = false;
+          String json = extras.getString("c.b");
+          if (json != null) {
+              try {
+                  JSONArray array = new JSONArray(json);
+                  for (int i = 0; i < array.length(); i++) {
+                      JSONObject btn = array.getJSONObject(i);
+                      if (btn.has("t") && btn.has("l")) {
+                          Button button = new Button();
+                          button.index = i + 1;
+                          button.title = btn.getString("t");
+                          button.link = btn.getString("l");
+                          Intent actionIntent = new Intent(context, RNPushNotificationPublisher.class);
+                          // actionIntent.putExtra("ly.count.android.api.messaging.action.index", button.index);
+                          mBuilder.addAction(0, button.title, PendingIntent.getActivity(context, button.index, actionIntent, PendingIntent.FLAG_UPDATE_CURRENT));
+                      }
+                  }
+              } catch (Throwable e) {
+                  e.printStackTrace();
+              }
+          }
+      }
+      // Countly End
 
     private void scheduleNextNotificationIfRepeating(Bundle bundle) {
         String repeatType = bundle.getString("repeatType");
@@ -406,6 +556,13 @@ public class RNPushNotificationHelper {
         notificationManager.cancelAll();
     }
 
+    public void clearNotification(int notificationID) {
+        Log.i(LOG_TAG, "Clearing notification: " + notificationID);
+
+        NotificationManager notificationManager = notificationManager();
+        notificationManager.cancel(notificationID);
+    }
+
     public void cancelAllScheduledNotifications() {
         Log.i(LOG_TAG, "Cancelling all notifications");
 
@@ -463,5 +620,56 @@ public class RNPushNotificationHelper {
         } else {
             editor.apply();
         }
+    }
+
+    private static boolean channelCreated = false;
+    private void checkOrCreateChannel(NotificationManager manager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O)
+            return;
+        if (channelCreated)
+            return;
+        if (manager == null)
+            return;
+
+        Bundle bundle = new Bundle();
+
+        int importance = NotificationManager.IMPORTANCE_HIGH;
+        final String importanceString = bundle.getString("importance");
+
+        if (importanceString != null) {
+            switch(importanceString.toLowerCase()) {
+                case "default":
+                    importance = NotificationManager.IMPORTANCE_DEFAULT;
+                    break;
+                case "max":
+                    importance = NotificationManager.IMPORTANCE_MAX;
+                    break;
+                case "high":
+                    importance = NotificationManager.IMPORTANCE_HIGH;
+                    break;
+                case "low":
+                    importance = NotificationManager.IMPORTANCE_LOW;
+                    break;
+                case "min":
+                    importance = NotificationManager.IMPORTANCE_MIN;
+                    break;
+                case "none":
+                    importance = NotificationManager.IMPORTANCE_NONE;
+                    break;
+                case "unspecified":
+                    importance = NotificationManager.IMPORTANCE_UNSPECIFIED;
+                    break;
+                default:
+                    importance = NotificationManager.IMPORTANCE_HIGH;
+            }
+        }
+
+        NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, this.config.getChannelName(), importance);
+        channel.setDescription(this.config.getChannelDescription());
+        channel.enableLights(true);
+        channel.enableVibration(true);
+
+        manager.createNotificationChannel(channel);
+        channelCreated = true;
     }
 }
