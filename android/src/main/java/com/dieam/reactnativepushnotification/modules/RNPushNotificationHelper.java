@@ -420,31 +420,11 @@ public class RNPushNotificationHelper {
         setNotificationButton(extras, mBuilder);
     }
 
-    public Bitmap getBitmapFromURL(String strURL) {
-        try {
-            URL url = new URL(strURL);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setDoInput(true);
-            connection.connect();
-            InputStream input = connection.getInputStream();
-            Bitmap myBitmap = BitmapFactory.decodeStream(input);
-            return myBitmap;
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
       public void setNotificationMedia(Bundle extras, NotificationCompat.Builder mBuilder){
           String mediaString = extras.getString("c.m");
           String message = extras.getString("message");
           Log.w(LOG_TAG, mediaString);
           Log.w(LOG_TAG, message);
-        
-            // Bitmap bitmap = getBitmapFromURL(mediaString);
-          // mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
-          //             .bigPicture(bitmap)
-          //             .setBigContentTitle(extras.getString("title"))
-          //             .setSummaryText(message));
           Bitmap image = null;
           if (message == null) {
               message = "";
@@ -452,14 +432,14 @@ public class RNPushNotificationHelper {
           if (mediaString != null && !"".equals(mediaString)) {
               try {
                   URL url = new URL(mediaString);
-                  image = BitmapFactory.decodeStream(url.openConnection().getInputStream());
+                  // image = BitmapFactory.decodeStream(url.openConnection().getInputStream());
+                  // mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
+                  //     .bigPicture(image)
+                  //     .setBigContentTitle(extras.getString("title"))
+                  //     .setSummaryText(message));
               } catch(IOException e) {
-                  System.out.println(e);
+                    Log.e(LOG_TAG, "failed to convert url", e);
               }
-              mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
-                      .bigPicture(image)
-                      .setBigContentTitle(extras.getString("title"))
-                      .setSummaryText(message));
           }
       }
 
