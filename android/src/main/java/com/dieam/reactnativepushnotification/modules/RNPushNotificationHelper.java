@@ -17,8 +17,10 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.media.RingtoneManager;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.v4.app.NotificationCompat;
 import android.util.Log;
 
@@ -32,6 +34,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.io.ByteArrayOutputStream;
 
 import java.util.Arrays;
 
@@ -328,7 +331,7 @@ public class RNPushNotificationHelper {
             PendingIntent pendingIntent = PendingIntent.getActivity(context, notificationID, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT);
 
-            NotificationManager notificationManager = notificationManager();
+            final NotificationManager notificationManager = notificationManager();
             checkOrCreateChannel(notificationManager);
 
             notification.setContentIntent(pendingIntent);
@@ -420,7 +423,7 @@ public class RNPushNotificationHelper {
         setNotificationButton(extras, mBuilder);
     }
 
-      public void setNotificationMedia(Bundle extras, NotificationCompat.Builder mBuilder){
+    public void setNotificationMedia(Bundle extras, final NotificationCompat.Builder mBuilder){
           String mediaString = extras.getString("c.m");
           String message = extras.getString("message");
           Log.w(LOG_TAG, mediaString);
@@ -431,12 +434,18 @@ public class RNPushNotificationHelper {
           }
           if (mediaString != null && !"".equals(mediaString)) {
               try {
-                  URL url = new URL(mediaString);
-                  // image = BitmapFactory.decodeStream(url.openConnection().getInputStream());
-                  // mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
-                  //     .bigPicture(image)
-                  //     .setBigContentTitle(extras.getString("title"))
-                  //     .setSummaryText(message));
+                    URL url = new URL(mediaString);
+                    loadImage(context, url, new BitmapCallback() {
+                        @Override
+                        public void call(Bitmap bitmap) {
+                            if (bitmap != null) {
+                                mBuilder.setStyle(new NotificationCompat.BigPictureStyle()
+                                        .bigPicture(bitmap)
+                                        .setBigContentTitle("title")
+                                        .setSummaryText("message"));
+                            }
+                        }
+                    });
               } catch(IOException e) {
                     Log.e(LOG_TAG, "failed to convert url", e);
               }
@@ -651,5 +660,65 @@ public class RNPushNotificationHelper {
 
         manager.createNotificationChannel(channel);
         channelCreated = true;
+    }
+
+    private interface BitmapCallback {
+        void call(Bitmap bitmap);
+    }
+
+    private static void loadImage(final Context context, final URL msg, final BitmapCallback callback) {
+        new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected Void doInBackground(Void... voids) {
+                final Bitmap bitmap[] = new Bitmap[]{null};
+
+                if (msg != null) {
+                    HttpURLConnection connection = null;
+                    InputStream input = null;
+                    try {
+                        connection = (HttpURLConnection) msg.openConnection();
+                        connection.setDoInput(true);
+                        connection.setConnectTimeout(15000);
+                        connection.setReadTimeout(15000);
+                        connection.connect();
+                        input = connection.getInputStream();
+                        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                        byte[] buf = new byte[16384];
+                        int read;
+                        while ((read = input.read(buf, 0, buf.length)) != -1) {
+                            bytes.write(buf, 0, read);
+                        }
+                        bytes.flush();
+
+                        byte[] data = bytes.toByteArray();
+                        bitmap[0] = BitmapFactory.decodeByteArray(data, 0, data.length);
+
+                    } catch (Exception e) {
+                        System.out.println("Cannot download message media " + e);
+                        bitmap[0] = null;
+                    } finally {
+                        if (input != null) {
+                            try {
+                                input.close();
+                            } catch (IOException ignored) {}
+                        }
+                        if (connection != null) {
+                            try {
+                                connection.disconnect();
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                }
+
+                new Handler(context.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        callback.call(bitmap[0]);
+                    }
+                });
+
+                return null;
+            }
+        }.doInBackground();
     }
 }
