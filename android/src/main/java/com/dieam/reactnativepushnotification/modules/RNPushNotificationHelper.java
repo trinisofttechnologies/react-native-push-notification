@@ -419,7 +419,7 @@ public class RNPushNotificationHelper {
     // setNotificationCountly(extras, mBuilder);
     public void setNotificationCountly(Bundle extras, NotificationCompat.Builder mBuilder){
 
-        setNotificationMedia(extras, mBuilder);
+        //setNotificationMedia(extras, mBuilder);
         setNotificationButton(extras, mBuilder);
     }
 
